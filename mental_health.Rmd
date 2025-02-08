@@ -22,7 +22,9 @@ sample_submission <- read_csv(file.path(data_path,'sample_submission.csv'))
 ```{r}
 skimr::skim(raw_train)
 ```
+
 # Recipes
+## rcp v baseline
 ```{r}
 prep_recipe <- recipe(Depression ~ ., data = raw_train) %>%
   step_rm(id) %>%
@@ -49,6 +51,87 @@ prep_recipe|>prep()|>juice()
 
 
 
+## rcp v_fe01-replace name
+```{r}
+rcp_fe_v1 <- 
+  recipe(Depression ~ ., data = raw_train) |>
+  step_rm(id) %>%
+  step_mutate(Depression = factor(Depression),skip=TRUE) |>
+  step_mutate(Degree=case_when(Degree %in% c('B.Pharm', 
+                                              'BPharm', 'P.Pharm', 'B. Pharm', 'S.Pharm', "H_Pharm", 'N.Pharm',
+                                              'B.Sc', 'BSc', 'B.Sc', 'B.Student',
+                                              'B.Tech','BTech', 'B.Tech', 'B B.Tech', 'S.Tech', 'E.Tech', 'LLTech',
+                                              'B.Arch', 'B.B.Arch', 'B.Arch', 'B. Architecture', 'BArch', 'S.Arch',
+                                              'B.Com','B.Com', "B B.Com", 'LLCom', 'LL.Com', 'B_Com',
+                                              'BBA', 'BBA', 'B.BA', "BBA", 'B BA', 'BA',
+                                              'BCA','B.CA', 'BCA', 'B BCA',
+                                              'BHM', 'BHM', 'B.H', "BH",'B.Ed','BEd', 'B.Ed.', 'B. Ed',
+                                              'BPA', 
+                                              'BH', 'B. Gender', 'BB', 'BE', 'BHCA', 
+                                              'B.Press', 'Mechanical Engineer')~'Bachelors',
+                               Degree %in% c( 'M.Tech','MTech', 'M.Tech', 'M_Tech',
+                                              'MBA','M. Business Analyst', 
+                                              'M.Arch', 'M.Arch',
+                                              'M.Sc','M.S', 'MSc','M.S', 'MSc',
+                                              'M.Com', 'M.Com', 'B.M.Com', 'P.Com',
+                                              'M.Pharm', 'MPharm', 'M.Pharm',
+                                              'M.Ed', 'M.Ed', 'M.M.Ed', 'MEd',
+                                              'MCA', 'MHM','MHM', 'LHM', 'M.B.Ed', 'MPA', 
+                                              'MD', 'ME', 'MBA', 'M.UI', 
+                                              'MBBS', 'M.A.','MA')~'Masters',
+                               Degree %in% c('PhD', 'Doctor')~'Doctorate',
+                               Degree %in% c('Class 12', 'Class 11') ~ 'High School' ,
+                               Degree %in% c('xCA','RCA', 'GCA', 'PCA', 'LCA', 'ACA') ~'Random CA',
+                               Degree %in% c('General Ed','E.Ed', 'G.Ed', 
+                                             'J.Ed', 'K.Ed', 'I.Ed', 'A.Ed')~'General Ed',
+                               Degree %in% c('LLS', 'LLB','LLB', 
+                                             'LLBA', 'LLM', 'LL B.Ed',
+                                             'LL B.Ed', 'LLEd', "L.Ed")~'Law',
+                               .default = Degree)) |>
+  step_mutate(Profession = case_when(Profession %in% c('Finanancial Analyst', 'Analyst', 'Financial Analyst',
+                                                          'Business Analyst', 'Research Analyst',
+                                                          'Data Scientist') ~ 'Analyst',
+                                     Profession %in% c("Simran", "Name", "No", "24th", "Unhealthy",
+                                                          "Yuvraj", "Yogesh", "Patna", "Nagpur", "Pranav",
+                                                          "Visakhapatnam", "Moderate", "Manvi", "Samar", 
+                                                          "Surat", 'nan')~NA,
+                                     .default=Profession))|>
+  step_mutate(avg_sleep= {
+              numbers <- str_extract_all(`Sleep Duration`, "\\d+")
+              purrr::map_dbl(numbers, ~ { # ~ function(numbers)
+                                          if (length(.x) == 0) {
+                                            return(NA_real_)
+                                          }
+                                            
+                                          numbers_int <- as.integer(.x)
+                                          
+                                          if(length(numbers_int) == 1){
+                                            return(numbers_int)
+                                          }
+                                           mean(numbers_int)
+                                           })
+              })|>
+  step_mutate(
+    across(where(is.character), as.factor)
+  ) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  # step_novel(all_nominal_predictors(),new_level ="unknown" ,skip = TRUE) %>%
+  step_other(all_nominal_predictors(), threshold =0.05) |>
+  # step_other(Name, threshold = 0.01) %>%
+  # step_other(Profession, threshold = 0.01) %>%
+  # step_other(City, threshold = 0.01) %>%
+  # step_other(Degree, threshold = 0.01) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_nzv(all_predictors())|>
+  step_corr(all_predictors())|>
+  step_normalize(all_numeric_predictors()) |>
+  check_missing(all_predictors())
+
+rcp_fe_v1 |>prep()
+```
+
+
 ```{r}
 # Model specification
 lr_model <- logistic_reg() %>%
@@ -58,7 +141,7 @@ lr_model <- logistic_reg() %>%
 
 # Workflow
 lr_workflow <- workflow() %>%
-  add_recipe(prep_recipe) %>%
+  add_recipe(rcp_fe_v1) %>%
   add_model(lr_model)
 
 # Train the model
